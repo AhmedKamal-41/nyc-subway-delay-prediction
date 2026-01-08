@@ -1,6 +1,28 @@
-# NYC Subway Delay Risk - Step 1
+# NYC Subway Delay Risk
 
-Foundation setup with PostgreSQL database and connectivity.
+A machine learning pipeline for predicting NYC subway delay risk using real-time GTFS-RT feeds, featuring ingestion, aggregation, model training, and real-time API serving.
+
+---
+
+## Tech Stack
+
+![Python](https://img.shields.io/badge/Python-3.11+-3776ab?style=flat-square&logo=python&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-1.5+-F7931E?style=flat-square&logo=scikit-learn&logoColor=white)
+![LightGBM](https://img.shields.io/badge/LightGBM-4.5+-9B59B6?style=flat-square)
+![Pandas](https://img.shields.io/badge/Pandas-2.0+-150458?style=flat-square&logo=pandas&logoColor=white)
+![MLflow](https://img.shields.io/badge/MLflow-2.17+-0194E2?style=flat-square&logo=mlflow&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.39+-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-Latest-E6522C?style=flat-square&logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-Latest-F46800?style=flat-square&logo=grafana&logoColor=white)
+
+**Data Sources:**
+- GTFS-RT Feeds (Service Alerts, Trip Updates, Vehicle Positions)
+- MTA Real-time Transit Data
+
+---
 
 ## Prerequisites
 
