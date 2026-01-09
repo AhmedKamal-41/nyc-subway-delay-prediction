@@ -4,11 +4,12 @@ from ..utils.time import from_epoch_seconds
 
 
 def parse_feed(feed_bytes: bytes) -> tuple:
-    """Parse GTFS-RT feed and extract entities with metadata.
+    """Parse GTFS-RT feed and extract entities with metadata and type.
     
     Returns:
         tuple: (feed_ts: datetime, entities: list[dict])
-        Each entity dict contains: entity_id, payload, line_id, stop_id, trip_id
+        Each entity dict contains: entity_id, payload, line_id, stop_id, trip_id, entity_type
+        entity_type is one of: 'service_alerts', 'trip_updates', 'vehicle_positions'
     """
     feed_message = gtfs_realtime_pb2.FeedMessage()
     feed_message.ParseFromString(feed_bytes)
@@ -20,6 +21,7 @@ def parse_feed(feed_bytes: bytes) -> tuple:
     
     for entity in feed_message.entity:
         entity_id = entity.id
+        entity_type = None
         
         # Convert entity to dict for JSONB storage
         payload = MessageToDict(entity, preserving_proto_field_name=True)
@@ -31,6 +33,7 @@ def parse_feed(feed_bytes: bytes) -> tuple:
         
         # Service alerts
         if entity.HasField("alert"):
+            entity_type = "service_alerts"
             alert = entity.alert
             if alert.informed_entity:
                 for informed_entity in alert.informed_entity:
@@ -40,7 +43,8 @@ def parse_feed(feed_bytes: bytes) -> tuple:
                         stop_id = informed_entity.stop_id
         
         # Trip updates
-        if entity.HasField("trip_update"):
+        elif entity.HasField("trip_update"):
+            entity_type = "trip_updates"
             trip_update = entity.trip_update
             if trip_update.trip.HasField("route_id"):
                 line_id = trip_update.trip.route_id
@@ -53,7 +57,8 @@ def parse_feed(feed_bytes: bytes) -> tuple:
                         break
         
         # Vehicle positions
-        if entity.HasField("vehicle"):
+        elif entity.HasField("vehicle"):
+            entity_type = "vehicle_positions"
             vehicle = entity.vehicle
             if vehicle.trip.HasField("route_id"):
                 line_id = vehicle.trip.route_id
@@ -62,13 +67,15 @@ def parse_feed(feed_bytes: bytes) -> tuple:
             if vehicle.HasField("stop_id"):
                 stop_id = vehicle.stop_id
         
-        entities.append({
-            "entity_id": entity_id,
-            "payload": payload,
-            "line_id": line_id if line_id else None,
-            "stop_id": stop_id if stop_id else None,
-            "trip_id": trip_id if trip_id else None,
-        })
+        if entity_type:
+            entities.append({
+                "entity_id": entity_id,
+                "payload": payload,
+                "line_id": line_id if line_id else None,
+                "stop_id": stop_id if stop_id else None,
+                "trip_id": trip_id if trip_id else None,
+                "entity_type": entity_type,
+            })
     
     return feed_ts, entities
 

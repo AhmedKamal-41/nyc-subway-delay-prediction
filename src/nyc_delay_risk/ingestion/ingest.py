@@ -65,14 +65,26 @@ def insert_raw_events(run_id: uuid.UUID, feed_type: str, feed_ts, entities: list
 
 
 def ingest_once() -> dict:
-    """Run a single ingestion cycle: fetch, parse, and store all three feeds."""
+    """Run a single ingestion cycle: fetch, parse, and store all feeds.
+    
+    Fetches:
+    - Service Alerts (single feed)
+    - Realtime feeds (multiple line-specific feeds, each containing trip updates and vehicle positions)
+    """
     api_key = os.getenv("MTA_API_KEY")
     service_alerts_url = os.getenv("SERVICE_ALERTS_URL")
-    trip_updates_url = os.getenv("TRIP_UPDATES_URL")
-    vehicle_positions_url = os.getenv("VEHICLE_POSITIONS_URL")
+    realtime_feeds_urls = os.getenv("REALTIME_FEEDS_URLS", "")
     
-    if not service_alerts_url or not trip_updates_url or not vehicle_positions_url:
-        raise ValueError("Required feed URLs not configured in environment variables")
+    if not service_alerts_url:
+        raise ValueError("SERVICE_ALERTS_URL environment variable is required")
+    if not realtime_feeds_urls:
+        raise ValueError("REALTIME_FEEDS_URLS environment variable is required (comma-separated list)")
+    
+    # Parse comma-separated list of realtime feed URLs
+    realtime_urls = [url.strip() for url in realtime_feeds_urls.split(",") if url.strip()]
+    
+    if not realtime_urls:
+        raise ValueError("REALTIME_FEEDS_URLS must contain at least one URL")
     
     run_id = start_run(source="mta_gtfs_rt", notes="ingest_once")
     summary = {
@@ -81,35 +93,64 @@ def ingest_once() -> dict:
     }
     
     try:
-        feed_configs = [
-            ("service_alerts", service_alerts_url),
-            ("trip_updates", trip_updates_url),
-            ("vehicle_positions", vehicle_positions_url),
-        ]
-        
         total_entities = 0
         
-        for feed_type, url in feed_configs:
-            logger.info(f"Fetching {feed_type} from {url}")
-            feed_bytes = fetch_bytes(url, api_key)
-            
-            logger.info(f"Parsing {feed_type}")
+        # Fetch and process service alerts
+        logger.info(f"Fetching service alerts from {service_alerts_url}")
+        feed_bytes = fetch_bytes(service_alerts_url, api_key)
+        feed_ts, entities = parse_feed(feed_bytes)
+        
+        # Filter only service_alerts entities
+        alerts_entities = [e for e in entities if e.get("entity_type") == "service_alerts"]
+        logger.info(f"Inserting {len(alerts_entities)} service alerts")
+        alerts_count = insert_raw_events(run_id, "service_alerts", feed_ts, alerts_entities)
+        total_entities += alerts_count
+        summary["feeds"]["service_alerts"] = {
+            "entities": alerts_count,
+            "feed_ts": feed_ts.isoformat()
+        }
+        
+        # Fetch and process all realtime feeds (trip updates + vehicle positions)
+        trip_updates_total = 0
+        vehicle_positions_total = 0
+        
+        for feed_url in realtime_urls:
+            logger.info(f"Fetching realtime feed from {feed_url}")
+            feed_bytes = fetch_bytes(feed_url, api_key)
             feed_ts, entities = parse_feed(feed_bytes)
             
-            logger.info(f"Inserting {len(entities)} entities for {feed_type}")
-            count = insert_raw_events(run_id, feed_type, feed_ts, entities)
-            total_entities += count
+            # Separate entities by type
+            trip_updates_entities = [e for e in entities if e.get("entity_type") == "trip_updates"]
+            vehicle_positions_entities = [e for e in entities if e.get("entity_type") == "vehicle_positions"]
             
-            summary["feeds"][feed_type] = {
-                "entities": count,
-                "feed_ts": feed_ts.isoformat()
-            }
+            # Insert trip updates
+            if trip_updates_entities:
+                logger.info(f"Inserting {len(trip_updates_entities)} trip updates from {feed_url}")
+                count = insert_raw_events(run_id, "trip_updates", feed_ts, trip_updates_entities)
+                trip_updates_total += count
+                total_entities += count
+            
+            # Insert vehicle positions
+            if vehicle_positions_entities:
+                logger.info(f"Inserting {len(vehicle_positions_entities)} vehicle positions from {feed_url}")
+                count = insert_raw_events(run_id, "vehicle_positions", feed_ts, vehicle_positions_entities)
+                vehicle_positions_total += count
+                total_entities += count
         
-        notes = f"Successfully ingested {total_entities} total entities"
+        summary["feeds"]["trip_updates"] = {
+            "entities": trip_updates_total,
+            "feeds_processed": len(realtime_urls)
+        }
+        summary["feeds"]["vehicle_positions"] = {
+            "entities": vehicle_positions_total,
+            "feeds_processed": len(realtime_urls)
+        }
+        
+        notes = f"Successfully ingested {total_entities} total entities from {len(realtime_urls) + 1} feeds"
         finish_run(run_id, "success", notes)
         summary["status"] = "success"
         summary["total_entities"] = total_entities
-        logger.info(f"Ingestion completed successfully: {total_entities} entities")
+        logger.info(f"Ingestion completed successfully: {total_entities} entities from {len(realtime_urls) + 1} feeds")
         
     except Exception as e:
         error_msg = str(e)
